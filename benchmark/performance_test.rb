@@ -4,53 +4,37 @@ require "benchmark"
 require "benchmark/ips"
 require_relative "../lib/dynamo_csv"
 
-# NOTE: This is sample data generation for testing purposes
-def generate_sample_data(index)
-  [
-    "Person#{index}",
-    rand(18..80).to_s,
-    ["New York", "London", "Tokyo", "Paris"].sample,
-    %w[Engineer Teacher Doctor Artist].sample
-  ]
-end
-
-def generate_sample_csv(file_name, rows)
-  CSV.open(file_name, "w") do |csv|
-    csv << %w[Name Age City Occupation]
-    rows.times { |index| csv << generate_sample_data(index) }
-  end
-end
-
-# Generate test files
-{
-  "100_data.csv" => 100,
-  "10k_data.csv" => 10_000,
-  "medium_data.csv" => 50_000,
-  "large_data.csv" => 100_000
-}.each do |file, rows|
-  generate_sample_csv(file, rows)
-end
-
 # Benchmark tests
-files = ["100_data.csv", "10k_data.csv", "medium_data.csv", "large_data.csv"]
+files = Dir.glob("benchmark/*.csv").map { |f| File.basename(f) }
 
-# Create different query scenarios based on actual data structure
+# Read sample data from first file to create realistic queries
+sample_data = CSV.read("benchmark/#{files.first}", headers: true)
+sample_row = sample_data.first.to_h
+
+# Create different query scenarios based on actual data
 queries = [
   {
     name: "Single column (Occupation)",
-    query: { "Occupation" => "Designer" }
+    query: { "Occupation" => sample_row["Occupation"] }
   },
   {
-    name: "Two columns (City + Occupation)",
-    query: { "City" => "Los Angeles", "Occupation" => "Designer" }
+    name: "Two columns (Location + Occupation)",
+    query: { 
+      "Location" => sample_row["Location"],
+      "Occupation" => sample_row["Occupation"]
+    }
   },
   {
     name: "Age range check",
-    query: { "Age" => "53" }
+    query: { "Age" => sample_row["Age"] }
   },
   {
     name: "Name exact match",
-    query: { "Name" => "Trina Sanford" }
+    query: { "Name" => sample_row["Name"] }
+  },
+  {
+    name: "Salary match",
+    query: { "Salary" => sample_row["Salary"] }
   }
 ]
 
@@ -61,15 +45,16 @@ puts "\nRunning benchmarks..."
 puts "=" * 80
 
 files.each do |file|
-  next unless File.exist?(file)
+  file_path = "benchmark/#{file}"
+  next unless File.exist?(file_path)
 
-  rows = File.readlines(file).size - 1
+  rows = File.readlines(file_path).size - 1
 
   queries.each do |scenario|
     print "Testing #{file} with #{scenario[:name]}... "
 
     times = 5.times.map do
-      Benchmark.measure { DynamoCsv::Query.query_csv(file, scenario[:query]) }.real
+      Benchmark.measure { DynamoCsv::Query.query_csv(file_path, scenario[:query]) }.real
     end
 
     avg_time = times.sum / times.size
